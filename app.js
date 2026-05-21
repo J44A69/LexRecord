@@ -1,963 +1,765 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LexCore — Registro de Servicios Legales</title>
-<link rel="stylesheet" href="styles.css">
-</head>
-<body>
+/* ════════════════════════════════════════
+   DATA
+════════════════════════════════════════ */
+let records = [
+  { id:'LEX-001', cliente:'Ana Belkis Núñez',  cedula:'001-1234567-1', tipo:'Derecho Civil',         abogado:'Dra. M. Rodríguez', fecha:'2025-04-12', estado:'Activo',    prioridad:'Alta',  desc:'Demanda por incumplimiento de contrato de arrendamiento comercial.' },
+  { id:'LEX-002', cliente:'Roberto Almonte',    cedula:'002-9876543-2', tipo:'Derecho Laboral',       abogado:'Lic. A. Fernández', fecha:'2025-04-08', estado:'Urgente',   prioridad:'Alta',  desc:'Despido injustificado con reclamación de prestaciones laborales.' },
+  { id:'LEX-003', cliente:'Empresas CORE SRL',  cedula:'1-30-12345-7',  tipo:'Derecho Comercial',    abogado:'Dr. J. Castro',     fecha:'2025-03-30', estado:'Pendiente', prioridad:'Media', desc:'Fusión societaria y registro de nueva razón social.' },
+  { id:'LEX-004', cliente:'Ingrid Martínez',    cedula:'003-4561230-5', tipo:'Derecho Familiar',      abogado:'Dra. M. Rodríguez', fecha:'2025-03-22', estado:'Activo',    prioridad:'Media', desc:'Proceso de divorcio consensual con partición de bienes.' },
+  { id:'LEX-005', cliente:'Carlos Tejeda',      cedula:'004-7890123-8', tipo:'Derecho Penal',         abogado:'Lic. S. Peralta',   fecha:'2025-03-15', estado:'Cerrado',   prioridad:'Baja',  desc:'Defensa en caso de robo. Sentencia absolutoria obtenida.' },
+  { id:'LEX-006', cliente:'TechRD Solutions',   cedula:'1-31-98765-4',  tipo:'Propiedad Intelectual', abogado:'Dr. J. Castro',     fecha:'2025-04-20', estado:'Activo',    prioridad:'Alta',  desc:'Registro de marca y patente de software fintech.' },
+];
 
-<!-- ══ SIDEBAR ══ -->
-<aside class="sidebar">
+let filtered      = [...records];
+let sortDir       = {};
+let currentFilter = 'todos';
+let currentSearch = '';
+let currentPage   = 1;
+const PAGE_SIZE   = 4;
+let editingIndex  = null;
 
-  <!-- Logo -->
-  <div class="logo">
-    <div class="logo-inner">
-      <div class="logo-icon">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-        </svg>
+/* ════════════════════════════════════════
+   NAV — switch views
+════════════════════════════════════════ */
+const titles = {
+  expedientes:  'Registro de Servicios',
+  clientes:     'Clientes',
+  audiencias:   'Audiencias',
+  documentos:   'Documentos',
+  facturacion:  'Facturación',
+  informes:     'Informes',
+  configuracion:'Configuración',
+};
+
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', function () {
+    const view = this.dataset.view;
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    this.classList.add('active');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-' + view).classList.add('active');
+    document.getElementById('topbar-title').textContent = titles[view] || view;
+  });
+});
+
+/* ════════════════════════════════════════
+   HELPERS
+════════════════════════════════════════ */
+function badgeClass(estado) {
+  return { Activo:'badge-active', Pendiente:'badge-pending', Cerrado:'badge-closed', Urgente:'badge-urgent' }[estado] || '';
+}
+
+function priorityDots(p) {
+  const lvl  = { Alta:3, Media:2, Baja:1 }[p] || 1;
+  const high = p === 'Alta';
+  return [1,2,3].map(i =>
+    `<div class="priority-dot ${i<=lvl?'fill':''}${i<=lvl&&high?' high':''}"></div>`
+  ).join('');
+}
+
+/* ════════════════════════════════════════
+   RENDER TABLE + PAGINATION
+════════════════════════════════════════ */
+function renderTable() {
+  const tbody = document.getElementById('table-body');
+  const empty = document.getElementById('empty-state');
+  tbody.innerHTML = '';
+
+  if (!filtered.length) {
+    empty.style.display = 'block';
+    document.getElementById('pag-info').innerHTML = 'Sin resultados';
+    document.getElementById('page-btns').innerHTML = '';
+    return;
+  }
+
+  empty.style.display = 'none';
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const page  = filtered.slice(start, start + PAGE_SIZE);
+
+  document.getElementById('pag-info').innerHTML =
+    `Mostrando <span class="pag-info-nums">${start + 1}–${start + page.length}</span> de <span class="pag-info-nums">${filtered.length}</span> registros`;
+
+  page.forEach((r, i) => {
+    const fi = start + i;
+    const tr = document.createElement('tr');
+    tr.style.animationDelay = (i * 0.05) + 's';
+    tr.innerHTML = `
+      <td class="td-id">${r.id}</td>
+      <td>${r.cliente}<div class="td-muted">${r.cedula}</div></td>
+      <td>${r.tipo}</td>
+      <td class="td-muted">${r.abogado}</td>
+      <td class="td-muted">${r.fecha}</td>
+      <td><span class="badge ${badgeClass(r.estado)}">${r.estado}</span></td>
+      <td><div class="priority">${priorityDots(r.prioridad)}</div></td>
+      <td>
+        <div class="actions">
+          <button class="action-btn view" title="Ver detalle" onclick="openPanel(${fi})">◎</button>
+          <button class="action-btn edit" title="Editar"      onclick="editRecord(${fi})">✎</button>
+          <button class="action-btn del"  title="Eliminar"    onclick="deleteRecord(${fi})">✕</button>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  renderPagination(totalPages);
+  updateStats();
+}
+
+function renderPagination(totalPages) {
+  const container = document.getElementById('page-btns');
+  container.innerHTML = '';
+
+  const prev = document.createElement('button');
+  prev.className = 'page-btn';
+  prev.textContent = '‹';
+  prev.disabled = currentPage === 1;
+  prev.onclick = () => { currentPage--; renderTable(); };
+  container.appendChild(prev);
+
+  let start = Math.max(1, currentPage - 2);
+  let end   = Math.min(totalPages, start + 4);
+  start     = Math.max(1, end - 4);
+  for (let p = start; p <= end; p++) {
+    const btn = document.createElement('button');
+    btn.className = 'page-btn' + (p === currentPage ? ' active' : '');
+    btn.textContent = p;
+    btn.onclick = () => { currentPage = p; renderTable(); };
+    container.appendChild(btn);
+  }
+
+  const next = document.createElement('button');
+  next.className = 'page-btn';
+  next.textContent = '›';
+  next.disabled = currentPage === totalPages;
+  next.onclick = () => { currentPage++; renderTable(); };
+  container.appendChild(next);
+}
+
+/* ════════════════════════════════════════
+   STATS
+════════════════════════════════════════ */
+function updateStats() {
+  document.getElementById('stat-total').textContent  = records.length;
+  document.getElementById('stat-active').textContent = records.filter(r => r.estado === 'Activo').length;
+  document.getElementById('stat-urgent').textContent = records.filter(r => r.estado === 'Urgente').length;
+  document.getElementById('nav-badge').textContent   = records.length;
+}
+
+/* ════════════════════════════════════════
+   FILTER / SEARCH / SORT
+════════════════════════════════════════ */
+function applyFilters() {
+  currentPage = 1;
+  filtered = records.filter(r => {
+    const matchFilter = currentFilter === 'todos' || r.estado === currentFilter;
+    const matchSearch = !currentSearch ||
+      r.cliente.toLowerCase().includes(currentSearch) ||
+      r.id.toLowerCase().includes(currentSearch) ||
+      r.tipo.toLowerCase().includes(currentSearch) ||
+      r.abogado.toLowerCase().includes(currentSearch);
+    return matchFilter && matchSearch;
+  });
+  renderTable();
+}
+
+function filterTable(val, el) {
+  currentFilter = val;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  applyFilters();
+}
+
+function searchTable(val) {
+  currentSearch = val.toLowerCase();
+  applyFilters();
+}
+
+function sortTable(key) {
+  sortDir[key] = !sortDir[key];
+  filtered.sort((a, b) => {
+    if (a[key] < b[key]) return sortDir[key] ? -1 : 1;
+    if (a[key] > b[key]) return sortDir[key] ?  1 : -1;
+    return 0;
+  });
+  renderTable();
+}
+
+/* ════════════════════════════════════════
+   MODAL
+════════════════════════════════════════ */
+function openModal(prefill) {
+  document.getElementById('modal-title').textContent =
+    prefill ? 'Editar Expediente' : 'Nuevo Expediente';
+  document.getElementById('f-cliente').value   = prefill?.cliente   || '';
+  document.getElementById('f-cedula').value    = prefill?.cedula    || '';
+  document.getElementById('f-tipo').value      = prefill?.tipo      || 'Derecho Civil';
+  document.getElementById('f-abogado').value   = prefill?.abogado   || 'Dra. M. Rodríguez';
+  document.getElementById('f-estado').value    = prefill?.estado    || 'Activo';
+  document.getElementById('f-prioridad').value = prefill?.prioridad || 'Alta';
+  document.getElementById('f-desc').value      = prefill?.desc      || '';
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+  editingIndex = null;
+}
+
+function addRecord() {
+  const cliente   = document.getElementById('f-cliente').value.trim();
+  const cedula    = document.getElementById('f-cedula').value.trim();
+  const tipo      = document.getElementById('f-tipo').value;
+  const abogado   = document.getElementById('f-abogado').value;
+  const estado    = document.getElementById('f-estado').value;
+  const prioridad = document.getElementById('f-prioridad').value;
+  const desc      = document.getElementById('f-desc').value.trim();
+
+  if (!cliente) { showToast('⚠ Ingrese el nombre del cliente'); return; }
+
+  if (editingIndex !== null) {
+    const id = filtered[editingIndex].id;
+    const ri = records.findIndex(r => r.id === id);
+    if (ri > -1) records[ri] = { ...records[ri], cliente, cedula, tipo, abogado, estado, prioridad, desc };
+    showToast('✓ Expediente actualizado');
+  } else {
+    const today = new Date().toISOString().split('T')[0];
+    const newId = 'LEX-' + String(records.length + 1).padStart(3, '0');
+    records.push({ id:newId, cliente, cedula, tipo, abogado, fecha:today, estado, prioridad, desc });
+    showToast('✓ Expediente registrado');
+  }
+
+  closeModal();
+  applyFilters();
+}
+
+function editRecord(idx) {
+  editingIndex = idx;
+  openModal(filtered[idx]);
+}
+
+function deleteRecord(idx) {
+  const r = filtered[idx];
+  if (!confirm(`¿Eliminar expediente ${r.id} — ${r.cliente}?`)) return;
+  records = records.filter(rec => rec.id !== r.id);
+  applyFilters();
+  showToast('✕ Expediente eliminado');
+}
+
+/* ════════════════════════════════════════
+   DETAIL PANEL
+════════════════════════════════════════ */
+function openPanel(idx) {
+  const r = filtered[idx];
+  document.getElementById('panel-title').textContent = r.id + ' · ' + r.cliente;
+  document.getElementById('panel-badge').innerHTML =
+    `<span class="badge ${badgeClass(r.estado)}">${r.estado}</span>`;
+  document.getElementById('panel-body').innerHTML = `
+    <div class="detail-row"><span class="detail-key">Cédula/RNC</span><span class="detail-val">${r.cedula}</span></div>
+    <div class="detail-row"><span class="detail-key">Tipo</span><span class="detail-val">${r.tipo}</span></div>
+    <div class="detail-row"><span class="detail-key">Abogado</span><span class="detail-val">${r.abogado}</span></div>
+    <div class="detail-row"><span class="detail-key">Fecha apertura</span><span class="detail-val">${r.fecha}</span></div>
+    <div class="detail-row"><span class="detail-key">Prioridad</span>
+      <span class="detail-val"><div class="priority" style="justify-content:flex-end">${priorityDots(r.prioridad)}</div></span></div>
+    <div class="detail-row"><span class="detail-key">Descripción</span>
+      <span class="detail-val" style="font-size:12px;color:var(--muted)">${r.desc || '—'}</span></div>
+    <div class="timeline">
+      <div class="timeline-title">Historial</div>
+      <div class="timeline-item">
+        <div class="tl-dot"></div>
+        <div class="tl-content"><div class="tl-text">Expediente aperturado</div><div class="tl-time">${r.fecha}</div></div>
       </div>
-      <div>
-        <div class="logo-mark">LexCore</div>
-        <div class="logo-sub">Gestión Legal</div>
+      <div class="timeline-item">
+        <div class="tl-dot"></div>
+        <div class="tl-content"><div class="tl-text">Documentación recibida</div><div class="tl-time">${r.fecha}</div></div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-dot"></div>
+        <div class="tl-content"><div class="tl-text">Asignado a ${r.abogado}</div><div class="tl-time">${r.fecha}</div></div>
       </div>
     </div>
-  </div>
+    <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-success" style="flex:1" onclick="changeStatus(${idx},'Activo')">Activar</button>
+      <button class="btn btn-danger"  style="flex:1" onclick="changeStatus(${idx},'Cerrado')">Cerrar</button>
+    </div>`;
+  document.getElementById('detail-panel').classList.add('open');
+}
 
-  <!-- Nav section label -->
-  <div class="nav-section-label">Principal</div>
+function closePanel() {
+  document.getElementById('detail-panel').classList.remove('open');
+}
 
-  <nav class="nav">
-    <div class="nav-item active" data-view="expedientes">
-      <span class="nav-icon">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
-        </svg>
-      </span>
-      Expedientes
-      <span class="nav-badge" id="nav-badge">6</span>
-    </div>
-    <div class="nav-item" data-view="clientes">
-      <span class="nav-icon">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-        </svg>
-      </span>
-      Clientes
-    </div>
-    <div class="nav-item" data-view="audiencias">
-      <span class="nav-icon">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-        </svg>
-      </span>
-      Audiencias
-    </div>
-    <div class="nav-item" data-view="documentos">
-      <span class="nav-icon">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
-        </svg>
-      </span>
-      Documentos
-    </div>
-  </nav>
+function changeStatus(idx, status) {
+  const r  = filtered[idx];
+  const ri = records.findIndex(x => x.id === r.id);
+  if (ri > -1) {
+    records[ri].estado = status;
+    applyFilters();
+    showToast(`✓ Estado → ${status}`);
+    closePanel();
+  }
+}
 
-  <div class="nav-section-label">Finanzas</div>
+/* ════════════════════════════════════════
+   TOAST
+════════════════════════════════════════ */
+let toastTimer;
+function showToast(msg) {
+  clearTimeout(toastTimer);
+  document.getElementById('toast-msg').textContent = msg;
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
 
-  <nav class="nav nav-sm">
-    <div class="nav-item" data-view="facturacion">
-      <span class="nav-icon">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-        </svg>
-      </span>
-      Facturación
-    </div>
-    <div class="nav-item" data-view="informes">
-      <span class="nav-icon">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
-        </svg>
-      </span>
-      Informes
-    </div>
-  </nav>
+/* ════════════════════════════════════════
+   EXPORT
+════════════════════════════════════════ */
+function exportData() {
+  const rows = [['ID','Cliente','Cédula','Tipo','Abogado','Fecha','Estado','Prioridad']];
+  records.forEach(r => rows.push([r.id, r.cliente, r.cedula, r.tipo, r.abogado, r.fecha, r.estado, r.prioridad]));
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'expedientes.csv';
+  a.click();
+  showToast('↑ Exportación completada');
+}
 
-  <div class="nav-section-label">Sistema</div>
+/* ════════════════════════════════════════
+   CLOSE MODAL ON OVERLAY CLICK
+════════════════════════════════════════ */
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) closeModal();
+});
 
-  <nav class="nav nav-sm">
-    <div class="nav-item" data-view="configuracion">
-      <span class="nav-icon">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-        </svg>
-      </span>
-      Configuración
-    </div>
-  </nav>
+/* ════════════════════════════════════════
+   INIT
+════════════════════════════════════════ */
+applyFilters();
 
-  <!-- Footer / User -->
-  <div class="sidebar-footer">
-    <div class="user-card">
-      <div class="user-avatar">MR</div>
-      <div class="user-info">
-        <div class="user-name">Dra. M. Rodríguez</div>
-        <div class="user-role">
-          <span class="user-dot"></span>Administrador
-        </div>
-      </div>
-      <div class="user-menu-btn" title="Opciones">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
-        </svg>
-      </div>
-    </div>
-  </div>
+/* ════════════════════════════════════════
+   CLIENTES
+════════════════════════════════════════ */
+let clientes = [
+  { id:'CLI-001', nombre:'Ana Belkis Núñez',  cedula:'001-1234567-1', tipo:'Persona Natural', telefono:'809-555-0101', email:'ana.nunez@email.com',    direccion:'Av. 27 de Febrero #45, Santo Domingo', notas:'' },
+  { id:'CLI-002', nombre:'Roberto Almonte',    cedula:'002-9876543-2', tipo:'Persona Natural', telefono:'809-555-0202', email:'r.almonte@email.com',     direccion:'Calle El Conde #12, Santo Domingo',    notas:'' },
+  { id:'CLI-003', nombre:'Empresas CORE SRL',  cedula:'1-30-12345-7',  tipo:'Empresa',         telefono:'809-555-0303', email:'legal@coresrl.com',       direccion:'Av. Winston Churchill, Torre Core, P3', notas:'Contacto principal: Ing. Luis Pérez' },
+  { id:'CLI-004', nombre:'Ingrid Martínez',    cedula:'003-4561230-5', tipo:'Persona Natural', telefono:'809-555-0404', email:'ingrid.m@email.com',      direccion:'Los Prados, C/ Las Flores #8',         notas:'' },
+  { id:'CLI-005', nombre:'Carlos Tejeda',      cedula:'004-7890123-8', tipo:'Persona Natural', telefono:'809-555-0505', email:'carlos.tejeda@email.com', direccion:'Villa Consuelo, C/ 5 #22',             notas:'Caso cerrado' },
+  { id:'CLI-006', nombre:'TechRD Solutions',   cedula:'1-31-98765-4',  tipo:'Empresa',         telefono:'809-555-0606', email:'info@techrd.com',         direccion:'Zona Franca Las Américas, Local 14',   notas:'Facturación mensual' },
+];
 
-</aside>
+let clientesFiltrados    = [...clientes];
+let clienteFilter        = 'todos';
+let clienteSearch        = '';
+let editingClienteIndex  = null;
 
-<!-- ══ MAIN ══ -->
-<main class="main">
+function renderClientes() {
+  const tbody = document.getElementById('clientes-body');
+  const empty = document.getElementById('clientes-empty');
+  tbody.innerHTML = '';
 
-  <!-- TOPBAR -->
-  <div class="topbar">
-    <div class="topbar-title" id="topbar-title">Registro de Servicios</div>
-    <div class="topbar-actions">
-      <button class="btn" onclick="exportData()">↑ Exportar</button>
-      <button class="btn btn-primary" onclick="openModal()">+ Nuevo Expediente</button>
-    </div>
-  </div>
+  if (!clientesFiltrados.length) { empty.style.display='block'; return; }
+  empty.style.display = 'none';
 
-  <!-- ══ VIEW: EXPEDIENTES ══ -->
-  <div class="view active" id="view-expedientes">
-
-    <!-- STATS -->
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-label">Total Expedientes</div>
-        <div class="stat-value" id="stat-total">0</div>
-        <div class="stat-delta delta-up">↑ 2 este mes</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Activos</div>
-        <div class="stat-value" id="stat-active">0</div>
-        <div class="stat-delta delta-up">↑ 1 nueva</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Urgentes</div>
-        <div class="stat-value" id="stat-urgent">0</div>
-        <div class="stat-delta delta-down">Requiere atención</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Horas Facturadas</div>
-        <div class="stat-value">48.5h</div>
-        <div class="stat-delta delta-up">↑ 12% vs anterior</div>
-      </div>
-    </div>
-
-    <!-- CONTENT -->
-    <div class="content">
-      <div class="section-header">
-        <span class="section-title">Expedientes Recientes</span>
-      </div>
-
-      <!-- FILTERS -->
-      <div class="filters">
-        <button class="filter-chip active" onclick="filterTable('todos', this)">Todos</button>
-        <button class="filter-chip" onclick="filterTable('Activo', this)">Activos</button>
-        <button class="filter-chip" onclick="filterTable('Pendiente', this)">Pendientes</button>
-        <button class="filter-chip" onclick="filterTable('Urgente', this)">Urgentes</button>
-        <button class="filter-chip" onclick="filterTable('Cerrado', this)">Cerrados</button>
-        <div class="search-box">
-          <span style="color:var(--muted);font-size:13px;">⌕</span>
-          <input type="text" placeholder="Buscar expediente..." oninput="searchTable(this.value)">
-        </div>
-      </div>
-
-      <!-- TABLE -->
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th onclick="sortTable('id')">ID ⇅</th>
-              <th onclick="sortTable('cliente')">Cliente ⇅</th>
-              <th onclick="sortTable('tipo')">Tipo ⇅</th>
-              <th onclick="sortTable('abogado')">Abogado ⇅</th>
-              <th onclick="sortTable('fecha')">Fecha ⇅</th>
-              <th onclick="sortTable('estado')">Estado ⇅</th>
-              <th>Prioridad</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="table-body"></tbody>
-        </table>
-        <div class="empty-state" id="empty-state">
-          <div class="empty-icon">◎</div>
-          <div>No se encontraron resultados</div>
-        </div>
-        <div class="pagination">
-          <span id="pag-info">Cargando…</span>
-          <div class="page-btns" id="page-btns"></div>
-        </div>
-      </div>
-    </div>
-  </div><!-- /view-expedientes -->
-
-  <!-- ══ PLACEHOLDER VIEWS ══ -->
-  <!-- ══ VIEW: CLIENTES ══ -->
-  <div class="view" id="view-clientes">
-    <div class="topbar-actions" style="padding:18px 32px 0;display:flex;justify-content:flex-end;gap:10px">
-      <button class="btn btn-primary" onclick="openClienteModal()">+ Nuevo Cliente</button>
-    </div>
-    <div class="content">
-      <div class="filters">
-        <button class="filter-chip active" onclick="filterClientes('todos',this)">Todos</button>
-        <button class="filter-chip" onclick="filterClientes('Persona Natural',this)">Persona Natural</button>
-        <button class="filter-chip" onclick="filterClientes('Empresa',this)">Empresa</button>
-        <div class="search-box">
-          <span style="color:var(--muted);font-size:13px">⌕</span>
-          <input type="text" placeholder="Buscar cliente..." oninput="searchClientes(this.value)">
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Cliente</th>
-              <th>Cédula / RNC</th>
-              <th>Tipo</th>
-              <th>Teléfono</th>
-              <th>Email</th>
-              <th>Expedientes</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="clientes-body"></tbody>
-        </table>
-        <div class="empty-state" id="clientes-empty">
-          <div class="empty-icon">◎</div>
-          <div>No se encontraron clientes</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══ VIEW: AUDIENCIAS ══ -->
-  <div class="view" id="view-audiencias">
-    <div class="topbar-actions" style="padding:18px 32px 0;display:flex;justify-content:flex-end;gap:10px">
-      <button class="btn btn-primary" onclick="openAudienciaModal()">+ Nueva Audiencia</button>
-    </div>
-    <div class="content">
-      <div class="stats-grid" style="margin-bottom:24px">
-        <div class="stat-card">
-          <div class="stat-label">Total Audiencias</div>
-          <div class="stat-value" id="aud-stat-total">0</div>
-          <div class="stat-delta delta-up">Este mes</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Programadas</div>
-          <div class="stat-value" id="aud-stat-prog">0</div>
-          <div class="stat-delta delta-up">Próximas</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Completadas</div>
-          <div class="stat-value" id="aud-stat-comp">0</div>
-          <div class="stat-delta delta-up">Historial</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Canceladas</div>
-          <div class="stat-value" id="aud-stat-canc">0</div>
-          <div class="stat-delta delta-down">Requiere atención</div>
-        </div>
-      </div>
-      <div class="filters">
-        <button class="filter-chip active" onclick="filterAudiencias('todos',this)">Todas</button>
-        <button class="filter-chip" onclick="filterAudiencias('Programada',this)">Programadas</button>
-        <button class="filter-chip" onclick="filterAudiencias('Completada',this)">Completadas</button>
-        <button class="filter-chip" onclick="filterAudiencias('Cancelada',this)">Canceladas</button>
-        <div class="search-box">
-          <span style="color:var(--muted);font-size:13px">⌕</span>
-          <input type="text" placeholder="Buscar audiencia..." oninput="searchAudiencias(this.value)">
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Expediente</th>
-              <th>Cliente</th>
-              <th>Tipo</th>
-              <th>Fecha</th>
-              <th>Hora</th>
-              <th>Juez / Tribunal</th>
-              <th>Estado</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="audiencias-body"></tbody>
-        </table>
-        <div class="empty-state" id="audiencias-empty">
-          <div class="empty-icon">◎</div>
-          <div>No se encontraron audiencias</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══ VIEW: DOCUMENTOS ══ -->
-  <div class="view" id="view-documentos">
-    <div class="topbar-actions" style="padding:18px 32px 0;display:flex;justify-content:flex-end;gap:10px">
-      <button class="btn btn-primary" onclick="openDocumentoModal()">+ Nuevo Documento</button>
-    </div>
-    <div class="content">
-      <div class="filters">
-        <button class="filter-chip active" onclick="filterDocumentos('todos',this)">Todos</button>
-        <button class="filter-chip" onclick="filterDocumentos('Contrato',this)">Contratos</button>
-        <button class="filter-chip" onclick="filterDocumentos('Demanda',this)">Demandas</button>
-        <button class="filter-chip" onclick="filterDocumentos('Poder',this)">Poderes</button>
-        <button class="filter-chip" onclick="filterDocumentos('Sentencia',this)">Sentencias</button>
-        <button class="filter-chip" onclick="filterDocumentos('Otro',this)">Otros</button>
-        <div class="search-box">
-          <span style="color:var(--muted);font-size:13px">⌕</span>
-          <input type="text" placeholder="Buscar documento..." oninput="searchDocumentos(this.value)">
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th>Expediente</th>
-              <th>Tipo</th>
-              <th>Subido por</th>
-              <th>Fecha</th>
-              <th>Tamaño</th>
-              <th>Estado</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="documentos-body"></tbody>
-        </table>
-        <div class="empty-state" id="documentos-empty">
-          <div class="empty-icon">◎</div>
-          <div>No se encontraron documentos</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="view" id="view-facturacion">
-    <div class="topbar">
-      <div class="topbar-title">Facturación</div>
-      <div class="topbar-actions">
-        <button class="btn" onclick="exportFacturasCSV()">↑ Exportar</button>
-        <button class="btn btn-primary" onclick="openFacturaModal()">+ Nueva Factura</button>
-      </div>
-    </div>
-    <div class="content">
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-label">Ingresos del mes</div>
-          <div class="stat-value" id="fac-stat-ingresos">$0</div>
-          <div class="stat-delta delta-up">↑ 12% vs anterior</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Facturas emitidas</div>
-          <div class="stat-value" id="fac-stat-emitidas">0</div>
-          <div class="stat-delta delta-up">Este mes</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Pendientes de cobro</div>
-          <div class="stat-value" id="fac-stat-pendientes">$0</div>
-          <div class="stat-delta delta-down" id="fac-stat-pend-count">— facturas</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Canceladas</div>
-          <div class="stat-value" id="fac-stat-canceladas">$0</div>
-          <div class="stat-delta delta-down" id="fac-stat-canc-count">— facturas</div>
-        </div>
-      </div>
-
-      <div class="section-header">
-        <span class="section-title">Facturas</span>
-      </div>
-      <div class="filters">
-        <button class="filter-chip active" onclick="filterFacturas('todos',this)">Todas</button>
-        <button class="filter-chip" onclick="filterFacturas('Pagada',this)">Pagadas</button>
-        <button class="filter-chip" onclick="filterFacturas('Pendiente',this)">Pendientes</button>
-        <button class="filter-chip" onclick="filterFacturas('Cancelada',this)">Canceladas</button>
-        <div class="search-box">
-          <span style="color:var(--muted);font-size:13px">⌕</span>
-          <input type="text" placeholder="Buscar factura..." oninput="searchFacturas(this.value)">
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>N.° Factura</th>
-              <th>Cliente</th>
-              <th>Expediente</th>
-              <th>Fecha</th>
-              <th>Vencimiento</th>
-              <th>Monto</th>
-              <th>Estado</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="facturas-body"></tbody>
-        </table>
-        <div class="empty-state" id="facturas-empty">
-          <div class="empty-icon">◎</div>
-          <div>No se encontraron facturas</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="view" id="view-informes">
-    <div class="topbar">
-      <div class="topbar-title">Informes</div>
-      <div class="topbar-actions">
-        <select class="form-control" style="padding:7px 12px;font-size:13px;width:auto"
-                onchange="updateInformes(this.value)" id="inf-periodo">
-          <option value="6">Últimos 6 meses</option>
-          <option value="12">Último año</option>
-          <option value="3">Últimos 3 meses</option>
-        </select>
-        <button class="btn" onclick="window.print()">⎙ Imprimir</button>
-      </div>
-    </div>
-    <div class="content">
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-label">Ingresos totales</div>
-          <div class="stat-value" id="inf-total">$0</div>
-          <div class="stat-delta delta-up">↑ 18% vs año ant.</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Expedientes activos</div>
-          <div class="stat-value" id="inf-activos">0</div>
-          <div class="stat-delta delta-up">En curso</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Ticket promedio</div>
-          <div class="stat-value" id="inf-ticket">$0</div>
-          <div class="stat-delta delta-up">↑ 5%</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Tasa de cobro</div>
-          <div class="stat-value" id="inf-tasa">0%</div>
-          <div class="stat-delta delta-up">↑ 3 pts</div>
-        </div>
-      </div>
-
-      <div class="section-header"><span class="section-title">Ingresos por mes</span></div>
-      <div class="table-wrap" style="padding:20px">
-        <div id="inf-bar-chart" style="display:flex;flex-direction:column;gap:10px"></div>
-      </div>
-
-      <div class="section-header" style="margin-top:8px">
-        <span class="section-title">Desglose por tipo de servicio</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Tipo de servicio</th>
-              <th>Expedientes</th>
-              <th>Facturado</th>
-              <th>% del total</th>
-              <th>Tendencia</th>
-            </tr>
-          </thead>
-          <tbody id="inf-categoria-body"></tbody>
-        </table>
-      </div>
-
-      <div class="section-header" style="margin-top:24px">
-        <span class="section-title">Rendimiento por abogado</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Abogado</th>
-              <th>Expedientes</th>
-              <th>Activos</th>
-              <th>Cerrados</th>
-              <th>Facturado</th>
-            </tr>
-          </thead>
-          <tbody id="inf-abogado-body"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <div class="view" id="view-configuracion">
-    <div class="topbar">
-      <div class="topbar-title">Configuración</div>
-    </div>
-    <div class="content">
-
-      <!-- Empresa -->
-      <div class="section-header"><span class="section-title">Datos de la empresa</span></div>
-      <div class="table-wrap" style="padding:20px">
-        <div class="form-grid">
-          <div class="form-group">
-            <label class="form-label">Nombre del despacho</label>
-            <input class="form-control" type="text" value="LexCore — Gestión Legal" id="cfg-nombre">
+  clientesFiltrados.forEach((c, i) => {
+    const expCount = records.filter(r => r.cedula === c.cedula).length;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;height:32px;border-radius:8px;background:var(--accent-dim);border:1px solid rgba(139,92,246,.25);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent2);flex-shrink:0">
+            ${c.nombre.split(' ').map(w=>w[0]).slice(0,2).join('')}
           </div>
-          <div class="form-group">
-            <label class="form-label">RUT / NIT / CIF</label>
-            <input class="form-control" type="text" value="76.543.210-K" id="cfg-rut">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Correo de facturación</label>
-            <input class="form-control" type="email" value="facturacion@lexcore.com" id="cfg-email">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Teléfono</label>
-            <input class="form-control" type="tel" value="+1 809 000 0000" id="cfg-tel">
-          </div>
-          <div class="form-group form-full">
-            <label class="form-label">Dirección</label>
-            <input class="form-control" type="text" value="Av. Abraham Lincoln 1234, Santo Domingo" id="cfg-dir">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Moneda por defecto</label>
-            <select class="form-control" id="cfg-moneda">
-              <option>USD — Dólar</option>
-              <option>DOP — Peso dominicano</option>
-              <option>EUR — Euro</option>
-              <option>MXN — Peso mexicano</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Días de vencimiento (facturas)</label>
-            <input class="form-control" type="number" value="30" id="cfg-venc">
-          </div>
-          <div class="form-group form-full">
-            <label class="form-label">Nota al pie de facturas</label>
-            <textarea class="form-control" rows="2" id="cfg-nota" style="resize:vertical">Gracias por su confianza. Pago vía transferencia bancaria o cheque.</textarea>
+          <div>
+            <div style="font-weight:500">${c.nombre}</div>
+            <div class="td-muted">${c.direccion}</div>
           </div>
         </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:16px">
-          <button class="btn btn-primary" onclick="saveCfg()">Guardar cambios</button>
+      </td>
+      <td class="td-muted" style="font-family:var(--font-num)">${c.cedula}</td>
+      <td><span class="badge ${c.tipo==='Empresa'?'badge-pending':'badge-active'}">${c.tipo}</span></td>
+      <td class="td-muted">${c.telefono}</td>
+      <td class="td-muted">${c.email}</td>
+      <td style="font-family:var(--font-num);color:var(--accent2);font-weight:600">${expCount}</td>
+      <td>
+        <div class="actions">
+          <button class="action-btn edit" title="Editar"    onclick="editCliente(${i})">✎</button>
+          <button class="action-btn del"  title="Eliminar"  onclick="deleteCliente(${i})">✕</button>
         </div>
-      </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
 
-      <!-- Notificaciones -->
-      <div class="section-header"><span class="section-title">Notificaciones</span></div>
-      <div class="table-wrap" style="padding:0 20px">
-        <div id="cfg-toggles">
-          <div class="cfg-toggle-row">
-            <div>
-              <div class="cfg-toggle-name">Factura pagada</div>
-              <div class="cfg-toggle-desc">Alerta cuando un cliente registra un pago</div>
-            </div>
-            <label class="cfg-switch"><input type="checkbox" checked><span class="cfg-knob"></span></label>
+function applyClienteFilters() {
+  clientesFiltrados = clientes.filter(c => {
+    const mf = clienteFilter === 'todos' || c.tipo === clienteFilter;
+    const ms = !clienteSearch || c.nombre.toLowerCase().includes(clienteSearch) || c.cedula.includes(clienteSearch);
+    return mf && ms;
+  });
+  renderClientes();
+}
+
+function filterClientes(val, el) {
+  clienteFilter = val;
+  document.querySelectorAll('#view-clientes .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  applyClienteFilters();
+}
+
+function searchClientes(val) { clienteSearch = val.toLowerCase(); applyClienteFilters(); }
+
+function openClienteModal(prefill) {
+  document.getElementById('modal-cliente-title').textContent = prefill ? 'Editar Cliente' : 'Nuevo Cliente';
+  document.getElementById('fc-nombre').value    = prefill?.nombre    || '';
+  document.getElementById('fc-cedula').value    = prefill?.cedula    || '';
+  document.getElementById('fc-tipo').value      = prefill?.tipo      || 'Persona Natural';
+  document.getElementById('fc-telefono').value  = prefill?.telefono  || '';
+  document.getElementById('fc-email').value     = prefill?.email     || '';
+  document.getElementById('fc-direccion').value = prefill?.direccion || '';
+  document.getElementById('fc-notas').value     = prefill?.notas     || '';
+  document.getElementById('modal-cliente').classList.add('open');
+}
+
+function closeClienteModal() {
+  document.getElementById('modal-cliente').classList.remove('open');
+  editingClienteIndex = null;
+}
+
+function saveCliente() {
+  const nombre = document.getElementById('fc-nombre').value.trim();
+  if (!nombre) { showToast('⚠ Ingrese el nombre del cliente'); return; }
+  const obj = {
+    nombre,
+    cedula:    document.getElementById('fc-cedula').value.trim(),
+    tipo:      document.getElementById('fc-tipo').value,
+    telefono:  document.getElementById('fc-telefono').value.trim(),
+    email:     document.getElementById('fc-email').value.trim(),
+    direccion: document.getElementById('fc-direccion').value.trim(),
+    notas:     document.getElementById('fc-notas').value.trim(),
+  };
+  if (editingClienteIndex !== null) {
+    obj.id = clientesFiltrados[editingClienteIndex].id;
+    const ri = clientes.findIndex(c => c.id === obj.id);
+    if (ri > -1) clientes[ri] = obj;
+    showToast('✓ Cliente actualizado');
+  } else {
+    obj.id = 'CLI-' + String(clientes.length + 1).padStart(3,'0');
+    clientes.push(obj);
+    showToast('✓ Cliente registrado');
+  }
+  closeClienteModal();
+  applyClienteFilters();
+}
+
+function editCliente(i) { editingClienteIndex = i; openClienteModal(clientesFiltrados[i]); }
+
+function deleteCliente(i) {
+  const c = clientesFiltrados[i];
+  if (!confirm(`¿Eliminar cliente ${c.nombre}?`)) return;
+  clientes = clientes.filter(x => x.id !== c.id);
+  applyClienteFilters();
+  showToast('✕ Cliente eliminado');
+}
+
+document.getElementById('modal-cliente').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-cliente')) closeClienteModal();
+});
+
+/* ════════════════════════════════════════
+   AUDIENCIAS
+════════════════════════════════════════ */
+let audiencias = [
+  { id:'AUD-001', expedienteId:'LEX-001', cliente:'Ana Belkis Núñez',  tipo:'Audiencia Preliminar',     fecha:'2025-05-10', hora:'09:00', tribunal:'Juzgado Civil y Comercial, Sala 2',  estado:'Completada', notas:'' },
+  { id:'AUD-002', expedienteId:'LEX-002', cliente:'Roberto Almonte',   tipo:'Audiencia de Fondo',       fecha:'2025-05-20', hora:'10:30', tribunal:'Tribunal Laboral, 1er Distrito',     estado:'Programada', notas:'Llevar contrato original' },
+  { id:'AUD-003', expedienteId:'LEX-004', cliente:'Ingrid Martínez',   tipo:'Audiencia de Conciliación',fecha:'2025-05-18', hora:'14:00', tribunal:'Juzgado de Familia, Sala 1',         estado:'Programada', notas:'' },
+  { id:'AUD-004', expedienteId:'LEX-006', cliente:'TechRD Solutions',  tipo:'Vista de Causa',           fecha:'2025-04-30', hora:'11:00', tribunal:'Oficina Nacional de PI',             estado:'Completada', notas:'' },
+  { id:'AUD-005', expedienteId:'LEX-003', cliente:'Empresas CORE SRL', tipo:'Audiencia de Sentencia',   fecha:'2025-06-05', hora:'09:30', tribunal:'Cámara Comercial, Santo Domingo',    estado:'Programada', notas:'Confirmar asistencia del representante legal' },
+  { id:'AUD-006', expedienteId:'LEX-005', cliente:'Carlos Tejeda',     tipo:'Audiencia de Fondo',       fecha:'2025-03-20', hora:'08:00', tribunal:'Juzgado Penal Colegiado, Sala 4',    estado:'Cancelada',  notas:'Reprogramada por el tribunal' },
+];
+
+let audienciasFiltradas   = [...audiencias];
+let audienciaFilter       = 'todos';
+let audienciaSearch       = '';
+let editingAudienciaIndex = null;
+
+function audBadge(e) {
+  return { Programada:'badge-pending', Completada:'badge-active', Cancelada:'badge-closed' }[e] || '';
+}
+
+function renderAudiencias() {
+  const tbody = document.getElementById('audiencias-body');
+  const empty = document.getElementById('audiencias-empty');
+  tbody.innerHTML = '';
+
+  document.getElementById('aud-stat-total').textContent = audiencias.length;
+  document.getElementById('aud-stat-prog').textContent  = audiencias.filter(a=>a.estado==='Programada').length;
+  document.getElementById('aud-stat-comp').textContent  = audiencias.filter(a=>a.estado==='Completada').length;
+  document.getElementById('aud-stat-canc').textContent  = audiencias.filter(a=>a.estado==='Cancelada').length;
+
+  if (!audienciasFiltradas.length) { empty.style.display='block'; return; }
+  empty.style.display = 'none';
+
+  audienciasFiltradas.forEach((a, i) => {
+    const isHoy = a.fecha === new Date().toISOString().split('T')[0];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="td-id">${a.expedienteId}</td>
+      <td>${a.cliente}</td>
+      <td class="td-muted">${a.tipo}</td>
+      <td style="font-family:var(--font-num);${isHoy?'color:var(--success);font-weight:600':''}">${a.fecha}${isHoy?' <span style="font-size:10px;background:rgba(74,222,128,.12);color:var(--success);padding:1px 6px;border-radius:3px;font-weight:700">HOY</span>':''}</td>
+      <td style="font-family:var(--font-num)" class="td-muted">${a.hora}</td>
+      <td class="td-muted">${a.tribunal}</td>
+      <td><span class="badge ${audBadge(a.estado)}">${a.estado}</span></td>
+      <td>
+        <div class="actions">
+          <button class="action-btn edit" title="Editar"   onclick="editAudiencia(${i})">✎</button>
+          <button class="action-btn del"  title="Eliminar" onclick="deleteAudiencia(${i})">✕</button>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function applyAudienciaFilters() {
+  audienciasFiltradas = audiencias.filter(a => {
+    const mf = audienciaFilter === 'todos' || a.estado === audienciaFilter;
+    const ms = !audienciaSearch ||
+      a.cliente.toLowerCase().includes(audienciaSearch) ||
+      a.expedienteId.toLowerCase().includes(audienciaSearch) ||
+      a.tipo.toLowerCase().includes(audienciaSearch);
+    return mf && ms;
+  });
+  renderAudiencias();
+}
+
+function filterAudiencias(val, el) {
+  audienciaFilter = val;
+  document.querySelectorAll('#view-audiencias .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  applyAudienciaFilters();
+}
+
+function searchAudiencias(val) { audienciaSearch = val.toLowerCase(); applyAudienciaFilters(); }
+
+function populateAudienciaSelect() {
+  const sel = document.getElementById('fa-expediente');
+  sel.innerHTML = records.map(r => `<option value="${r.id}">${r.id} — ${r.cliente}</option>`).join('');
+}
+
+function openAudienciaModal(prefill) {
+  populateAudienciaSelect();
+  document.getElementById('modal-audiencia-title').textContent = prefill ? 'Editar Audiencia' : 'Nueva Audiencia';
+  document.getElementById('fa-expediente').value = prefill?.expedienteId || records[0]?.id || '';
+  document.getElementById('fa-tipo').value       = prefill?.tipo         || 'Audiencia Preliminar';
+  document.getElementById('fa-fecha').value      = prefill?.fecha        || '';
+  document.getElementById('fa-hora').value       = prefill?.hora         || '';
+  document.getElementById('fa-tribunal').value   = prefill?.tribunal     || '';
+  document.getElementById('fa-estado').value     = prefill?.estado       || 'Programada';
+  document.getElementById('fa-notas').value      = prefill?.notas        || '';
+  document.getElementById('modal-audiencia').classList.add('open');
+}
+
+function closeAudienciaModal() {
+  document.getElementById('modal-audiencia').classList.remove('open');
+  editingAudienciaIndex = null;
+}
+
+function saveAudiencia() {
+  const expId = document.getElementById('fa-expediente').value;
+  const exp   = records.find(r => r.id === expId);
+  const obj = {
+    expedienteId: expId,
+    cliente:      exp?.cliente || '',
+    tipo:         document.getElementById('fa-tipo').value,
+    fecha:        document.getElementById('fa-fecha').value,
+    hora:         document.getElementById('fa-hora').value,
+    tribunal:     document.getElementById('fa-tribunal').value.trim(),
+    estado:       document.getElementById('fa-estado').value,
+    notas:        document.getElementById('fa-notas').value.trim(),
+  };
+  if (!obj.fecha) { showToast('⚠ Seleccione una fecha'); return; }
+  if (editingAudienciaIndex !== null) {
+    obj.id = audienciasFiltradas[editingAudienciaIndex].id;
+    const ri = audiencias.findIndex(a => a.id === obj.id);
+    if (ri > -1) audiencias[ri] = obj;
+    showToast('✓ Audiencia actualizada');
+  } else {
+    obj.id = 'AUD-' + String(audiencias.length + 1).padStart(3,'0');
+    audiencias.push(obj);
+    showToast('✓ Audiencia registrada');
+  }
+  closeAudienciaModal();
+  applyAudienciaFilters();
+}
+
+function editAudiencia(i)   { editingAudienciaIndex = i; openAudienciaModal(audienciasFiltradas[i]); }
+
+function deleteAudiencia(i) {
+  const a = audienciasFiltradas[i];
+  if (!confirm(`¿Eliminar audiencia ${a.id}?`)) return;
+  audiencias = audiencias.filter(x => x.id !== a.id);
+  applyAudienciaFilters();
+  showToast('✕ Audiencia eliminada');
+}
+
+document.getElementById('modal-audiencia').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-audiencia')) closeAudienciaModal();
+});
+
+/* ════════════════════════════════════════
+   DOCUMENTOS
+════════════════════════════════════════ */
+let documentos = [
+  { id:'DOC-001', nombre:'Contrato de Arrendamiento Comercial', expedienteId:'LEX-001', tipo:'Contrato',  autor:'Dra. M. Rodríguez', fecha:'2025-04-12', tamano:'245 KB', estado:'Final',   notas:'' },
+  { id:'DOC-002', nombre:'Demanda Laboral - Almonte vs Empresa', expedienteId:'LEX-002', tipo:'Demanda',   autor:'Lic. A. Fernández', fecha:'2025-04-08', tamano:'512 KB', estado:'Firmado', notas:'' },
+  { id:'DOC-003', nombre:'Acta de Fusión Empresas CORE',         expedienteId:'LEX-003', tipo:'Contrato',  autor:'Dr. J. Castro',     fecha:'2025-03-30', tamano:'1.2 MB', estado:'Borrador',notas:'Pendiente revisión notarial' },
+  { id:'DOC-004', nombre:'Poder Especial - Ingrid Martínez',     expedienteId:'LEX-004', tipo:'Poder',     autor:'Dra. M. Rodríguez', fecha:'2025-03-22', tamano:'98 KB',  estado:'Firmado', notas:'' },
+  { id:'DOC-005', nombre:'Sentencia Absolutoria - Tejeda',       expedienteId:'LEX-005', tipo:'Sentencia', autor:'Lic. S. Peralta',   fecha:'2025-03-15', tamano:'330 KB', estado:'Final',   notas:'Archivado' },
+  { id:'DOC-006', nombre:'Solicitud Registro de Marca TechRD',   expedienteId:'LEX-006', tipo:'Otro',      autor:'Dr. J. Castro',     fecha:'2025-04-20', tamano:'780 KB', estado:'Final',   notas:'' },
+];
+
+let documentosFiltrados   = [...documentos];
+let documentoFilter       = 'todos';
+let documentoSearch       = '';
+let editingDocumentoIndex = null;
+
+function docBadge(e) {
+  return { Final:'badge-active', Firmado:'badge-urgent', Borrador:'badge-pending' }[e] || '';
+}
+
+function docIcono(tipo) {
+  const m = { Contrato:'📄', Demanda:'⚖', Poder:'🔏', Sentencia:'🏛', Otro:'📎' };
+  return m[tipo] || '📄';
+}
+
+function renderDocumentos() {
+  const tbody = document.getElementById('documentos-body');
+  const empty = document.getElementById('documentos-empty');
+  tbody.innerHTML = '';
+
+  if (!documentosFiltrados.length) { empty.style.display='block'; return; }
+  empty.style.display = 'none';
+
+  documentosFiltrados.forEach((d, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:16px">${docIcono(d.tipo)}</span>
+          <div>
+            <div style="font-weight:500">${d.nombre}</div>
+            <div class="td-muted">${d.notas || '—'}</div>
           </div>
-          <div class="cfg-toggle-row">
-            <div>
-              <div class="cfg-toggle-name">Factura vencida</div>
-              <div class="cfg-toggle-desc">Recordatorio al superar la fecha de vencimiento</div>
-            </div>
-            <label class="cfg-switch"><input type="checkbox" checked><span class="cfg-knob"></span></label>
-          </div>
-          <div class="cfg-toggle-row">
-            <div>
-              <div class="cfg-toggle-name">Factura próxima a vencer</div>
-              <div class="cfg-toggle-desc">Alerta 3 días antes del vencimiento</div>
-            </div>
-            <label class="cfg-switch"><input type="checkbox" checked><span class="cfg-knob"></span></label>
-          </div>
-          <div class="cfg-toggle-row">
-            <div>
-              <div class="cfg-toggle-name">Resumen semanal</div>
-              <div class="cfg-toggle-desc">Informe de ingresos enviado cada lunes</div>
-            </div>
-            <label class="cfg-switch"><input type="checkbox"><span class="cfg-knob"></span></label>
-          </div>
-          <div class="cfg-toggle-row">
-            <div>
-              <div class="cfg-toggle-name">Nuevo expediente</div>
-              <div class="cfg-toggle-desc">Notificación al registrar un nuevo expediente</div>
-            </div>
-            <label class="cfg-switch"><input type="checkbox" checked><span class="cfg-knob"></span></label>
-          </div>
         </div>
-      </div>
+      </td>
+      <td class="td-id">${d.expedienteId}</td>
+      <td class="td-muted">${d.tipo}</td>
+      <td class="td-muted">${d.autor}</td>
+      <td class="td-muted" style="font-family:var(--font-num)">${d.fecha}</td>
+      <td class="td-muted" style="font-family:var(--font-num)">${d.tamano}</td>
+      <td><span class="badge ${docBadge(d.estado)}">${d.estado}</span></td>
+      <td>
+        <div class="actions">
+          <button class="action-btn view" title="Descargar" onclick="showToast('↓ Descargando ${d.nombre}…')">↓</button>
+          <button class="action-btn edit" title="Editar"    onclick="editDocumento(${i})">✎</button>
+          <button class="action-btn del"  title="Eliminar"  onclick="deleteDocumento(${i})">✕</button>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
 
-      <!-- Usuarios -->
-      <div class="section-header" style="margin-top:24px">
-        <span class="section-title">Usuarios y permisos</span>
-        <button class="btn" style="margin-left:auto" onclick="showToast('Invitación enviada','✓')">+ Invitar usuario</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Usuario</th><th>Email</th><th>Rol</th><th>Estado</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><strong>Dra. M. Rodríguez</strong></td>
-              <td>m.rodriguez@lexcore.com</td>
-              <td><span class="badge badge-purple">Administrador</span></td>
-              <td><span class="badge badge-green">Activo</span></td>
-            </tr>
-            <tr>
-              <td>Lic. A. Fernández</td>
-              <td>a.fernandez@lexcore.com</td>
-              <td><span class="badge badge-blue">Editor</span></td>
-              <td><span class="badge badge-green">Activo</span></td>
-            </tr>
-            <tr>
-              <td>Dr. J. Castro</td>
-              <td>j.castro@lexcore.com</td>
-              <td><span class="badge badge-blue">Editor</span></td>
-              <td><span class="badge badge-green">Activo</span></td>
-            </tr>
-            <tr>
-              <td>Lic. S. Peralta</td>
-              <td>s.peralta@lexcore.com</td>
-              <td><span class="badge badge-gray">Visor</span></td>
-              <td><span class="badge badge-green">Activo</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+function applyDocumentoFilters() {
+  documentosFiltrados = documentos.filter(d => {
+    const mf = documentoFilter === 'todos' || d.tipo === documentoFilter;
+    const ms = !documentoSearch ||
+      d.nombre.toLowerCase().includes(documentoSearch) ||
+      d.expedienteId.toLowerCase().includes(documentoSearch) ||
+      d.autor.toLowerCase().includes(documentoSearch);
+    return mf && ms;
+  });
+  renderDocumentos();
+}
 
-      <!-- Seguridad -->
-      <div class="section-header" style="margin-top:24px"><span class="section-title">Seguridad</span></div>
-      <div class="table-wrap" style="padding:20px">
-        <div class="form-grid">
-          <div class="form-group">
-            <label class="form-label">Contraseña actual</label>
-            <input class="form-control" type="password" placeholder="••••••••">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Nueva contraseña</label>
-            <input class="form-control" type="password" placeholder="••••••••">
-          </div>
-        </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:16px">
-          <button class="btn btn-primary" onclick="saveCfg()">Actualizar contraseña</button>
-        </div>
-      </div>
+function filterDocumentos(val, el) {
+  documentoFilter = val;
+  document.querySelectorAll('#view-documentos .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  applyDocumentoFilters();
+}
 
-    </div>
-  </div>
+function searchDocumentos(val) { documentoSearch = val.toLowerCase(); applyDocumentoFilters(); }
 
-</main>
+function populateDocumentoSelect() {
+  const sel = document.getElementById('fd-expediente');
+  sel.innerHTML = records.map(r => `<option value="${r.id}">${r.id} — ${r.cliente}</option>`).join('');
+}
 
-<!-- ══ MODAL NUEVO / EDITAR ══ -->
-<div class="modal-overlay" id="modal">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title" id="modal-title">Nuevo Expediente</div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Nombre del Cliente</label>
-          <input class="form-control" type="text" placeholder="Ej. Carlos Méndez" id="f-cliente">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Cédula / RNC</label>
-          <input class="form-control" type="text" placeholder="000-0000000-0" id="f-cedula">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Tipo de Servicio</label>
-          <select class="form-control" id="f-tipo">
-            <option>Derecho Civil</option>
-            <option>Derecho Penal</option>
-            <option>Derecho Laboral</option>
-            <option>Derecho Comercial</option>
-            <option>Derecho Familiar</option>
-            <option>Propiedad Intelectual</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Abogado Asignado</label>
-          <select class="form-control" id="f-abogado">
-            <option>Dra. M. Rodríguez</option>
-            <option>Lic. A. Fernández</option>
-            <option>Dr. J. Castro</option>
-            <option>Lic. S. Peralta</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Estado</label>
-          <select class="form-control" id="f-estado">
-            <option>Activo</option>
-            <option>Pendiente</option>
-            <option>Urgente</option>
-            <option>Cerrado</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Prioridad</label>
-          <select class="form-control" id="f-prioridad">
-            <option>Alta</option>
-            <option>Media</option>
-            <option>Baja</option>
-          </select>
-        </div>
-        <div class="form-group form-full">
-          <label class="form-label">Descripción del Caso</label>
-          <textarea class="form-control" rows="3" placeholder="Descripción breve del servicio legal..." id="f-desc" style="resize:vertical"></textarea>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="addRecord()">Registrar</button>
-    </div>
-  </div>
-</div>
+function openDocumentoModal(prefill) {
+  populateDocumentoSelect();
+  document.getElementById('modal-documento-title').textContent = prefill ? 'Editar Documento' : 'Nuevo Documento';
+  document.getElementById('fd-nombre').value      = prefill?.nombre      || '';
+  document.getElementById('fd-expediente').value  = prefill?.expedienteId|| records[0]?.id || '';
+  document.getElementById('fd-tipo').value        = prefill?.tipo        || 'Contrato';
+  document.getElementById('fd-estado').value      = prefill?.estado      || 'Borrador';
+  document.getElementById('fd-autor').value       = prefill?.autor       || 'Dra. M. Rodríguez';
+  document.getElementById('fd-notas').value       = prefill?.notas       || '';
+  document.getElementById('modal-documento').classList.add('open');
+}
 
-<!-- ══ DETAIL PANEL ══ -->
-<div class="detail-panel" id="detail-panel">
-  <div class="panel-header">
-    <div>
-      <div style="font-family:var(--font-serif);font-size:16px;margin-bottom:5px" id="panel-title">—</div>
-      <div id="panel-badge"></div>
-    </div>
-    <button class="panel-close" onclick="closePanel()">✕</button>
-  </div>
-  <div class="panel-body" id="panel-body"></div>
-</div>
+function closeDocumentoModal() {
+  document.getElementById('modal-documento').classList.remove('open');
+  editingDocumentoIndex = null;
+}
 
-<!-- ══ TOAST ══ -->
-<div class="toast" id="toast">
-  <span id="toast-icon">✓</span>
-  <span id="toast-msg">Acción completada</span>
-</div>
+function saveDocumento() {
+  const nombre = document.getElementById('fd-nombre').value.trim();
+  if (!nombre) { showToast('⚠ Ingrese el nombre del documento'); return; }
+  const obj = {
+    nombre,
+    expedienteId: document.getElementById('fd-expediente').value,
+    tipo:         document.getElementById('fd-tipo').value,
+    estado:       document.getElementById('fd-estado').value,
+    autor:        document.getElementById('fd-autor').value,
+    notas:        document.getElementById('fd-notas').value.trim(),
+    fecha:        new Date().toISOString().split('T')[0],
+    tamano:       '—',
+  };
+  if (editingDocumentoIndex !== null) {
+    obj.id     = documentosFiltrados[editingDocumentoIndex].id;
+    obj.tamano = documentosFiltrados[editingDocumentoIndex].tamano;
+    const ri = documentos.findIndex(d => d.id === obj.id);
+    if (ri > -1) documentos[ri] = obj;
+    showToast('✓ Documento actualizado');
+  } else {
+    obj.id = 'DOC-' + String(documentos.length + 1).padStart(3,'0');
+    documentos.push(obj);
+    showToast('✓ Documento registrado');
+  }
+  closeDocumentoModal();
+  applyDocumentoFilters();
+}
 
-<!-- ══ MODAL CLIENTES ══ -->
-<div class="modal-overlay" id="modal-cliente">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title" id="modal-cliente-title">Nuevo Cliente</div>
-      <button class="modal-close" onclick="closeClienteModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Nombre Completo / Razón Social</label>
-          <input class="form-control" type="text" placeholder="Ej. Ana Belkis Núñez" id="fc-nombre">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Cédula / RNC</label>
-          <input class="form-control" type="text" placeholder="000-0000000-0" id="fc-cedula">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Tipo</label>
-          <select class="form-control" id="fc-tipo">
-            <option>Persona Natural</option>
-            <option>Empresa</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Teléfono</label>
-          <input class="form-control" type="text" placeholder="809-000-0000" id="fc-telefono">
-        </div>
-        <div class="form-group form-full">
-          <label class="form-label">Email</label>
-          <input class="form-control" type="email" placeholder="correo@ejemplo.com" id="fc-email">
-        </div>
-        <div class="form-group form-full">
-          <label class="form-label">Dirección</label>
-          <input class="form-control" type="text" placeholder="Calle, sector, ciudad" id="fc-direccion">
-        </div>
-        <div class="form-group form-full">
-          <label class="form-label">Notas</label>
-          <textarea class="form-control" rows="2" id="fc-notas" style="resize:vertical"></textarea>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeClienteModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveCliente()">Guardar</button>
-    </div>
-  </div>
-</div>
+function editDocumento(i)   { editingDocumentoIndex = i; openDocumentoModal(documentosFiltrados[i]); }
 
-<!-- ══ MODAL AUDIENCIAS ══ -->
-<div class="modal-overlay" id="modal-audiencia">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title" id="modal-audiencia-title">Nueva Audiencia</div>
-      <button class="modal-close" onclick="closeAudienciaModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Expediente</label>
-          <select class="form-control" id="fa-expediente"></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Tipo de Audiencia</label>
-          <select class="form-control" id="fa-tipo">
-            <option>Audiencia Preliminar</option>
-            <option>Audiencia de Fondo</option>
-            <option>Vista de Causa</option>
-            <option>Audiencia de Conciliación</option>
-            <option>Audiencia de Sentencia</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Fecha</label>
-          <input class="form-control" type="date" id="fa-fecha">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Hora</label>
-          <input class="form-control" type="time" id="fa-hora">
-        </div>
-        <div class="form-group form-full">
-          <label class="form-label">Juez / Tribunal</label>
-          <input class="form-control" type="text" placeholder="Ej. Juzgado Civil y Comercial, Sala 3" id="fa-tribunal">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Estado</label>
-          <select class="form-control" id="fa-estado">
-            <option>Programada</option>
-            <option>Completada</option>
-            <option>Cancelada</option>
-          </select>
-        </div>
-        <div class="form-group form-full">
-          <label class="form-label">Notas</label>
-          <textarea class="form-control" rows="2" id="fa-notas" style="resize:vertical"></textarea>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeAudienciaModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveAudiencia()">Guardar</button>
-    </div>
-  </div>
-</div>
+function deleteDocumento(i) {
+  const d = documentosFiltrados[i];
+  if (!confirm(`¿Eliminar "${d.nombre}"?`)) return;
+  documentos = documentos.filter(x => x.id !== d.id);
+  applyDocumentoFilters();
+  showToast('✕ Documento eliminado');
+}
 
-<!-- ══ MODAL DOCUMENTOS ══ -->
-<div class="modal-overlay" id="modal-documento">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title" id="modal-documento-title">Nuevo Documento</div>
-      <button class="modal-close" onclick="closeDocumentoModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group form-full">
-          <label class="form-label">Nombre del Documento</label>
-          <input class="form-control" type="text" placeholder="Ej. Contrato de Arrendamiento - LEX-001" id="fd-nombre">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Expediente</label>
-          <select class="form-control" id="fd-expediente"></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Tipo</label>
-          <select class="form-control" id="fd-tipo">
-            <option>Contrato</option>
-            <option>Demanda</option>
-            <option>Poder</option>
-            <option>Sentencia</option>
-            <option>Otro</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Estado</label>
-          <select class="form-control" id="fd-estado">
-            <option>Borrador</option>
-            <option>Final</option>
-            <option>Firmado</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Subido por</label>
-          <select class="form-control" id="fd-autor">
-            <option>Dra. M. Rodríguez</option>
-            <option>Lic. A. Fernández</option>
-            <option>Dr. J. Castro</option>
-            <option>Lic. S. Peralta</option>
-          </select>
-        </div>
-        <div class="form-group form-full">
-          <label class="form-label">Notas</label>
-          <textarea class="form-control" rows="2" id="fd-notas" style="resize:vertical"></textarea>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeDocumentoModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveDocumento()">Guardar</button>
-    </div>
-  </div>
-</div>
+document.getElementById('modal-documento').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-documento')) closeDocumentoModal();
+});
 
-<!-- ══ MODAL FACTURA ══ -->
-<div class="modal-overlay" id="modal-factura">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title" id="modal-factura-title">Nueva Factura</div>
-      <button class="modal-close" onclick="closeFacturaModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Cliente</label>
-          <input class="form-control" type="text" placeholder="Nombre del cliente" id="ff-cliente">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Expediente</label>
-          <select class="form-control" id="ff-expediente"></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Monto</label>
-          <input class="form-control" type="number" placeholder="0.00" id="ff-monto">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Días para vencer</label>
-          <input class="form-control" type="number" value="30" id="ff-dias">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Categoría</label>
-          <select class="form-control" id="ff-categoria">
-            <option>Derecho Civil</option>
-            <option>Derecho Penal</option>
-            <option>Derecho Laboral</option>
-            <option>Derecho Comercial</option>
-            <option>Derecho Familiar</option>
-            <option>Consultoría</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Estado inicial</label>
-          <select class="form-control" id="ff-estado">
-            <option>Pendiente</option>
-            <option>Pagada</option>
-          </select>
-        </div>
-        <div class="form-group form-full">
-          <label class="form-label">Descripción</label>
-          <textarea class="form-control" rows="2" id="ff-desc" style="resize:vertical"></textarea>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeFacturaModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveFactura()">Crear factura</button>
-    </div>
-  </div>
-</div>
-
-<script src="app.js"></script>
-</body>
-</html>
+/* ── Init de los nuevos módulos ── */
+applyClienteFilters();
+applyAudienciaFilters();
+applyDocumentoFilters();
